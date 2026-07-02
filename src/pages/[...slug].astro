@@ -1,0 +1,29 @@
+---
+// Server-rendered catch-all: returns the pre-built full HTML document for the
+// requested path as a raw Response (no Astro layout wrap, no static directory
+// file, so no trailing-slash redirect loop on Webflow Cloud). Pages are bundled
+// in ../pages-data.js. Static assets live under public/assets.
+// Mount-path aware: strips the environment base for matching and rewrites
+// root-absolute href/src/action back through the base so links and assets work
+// whether the app is mounted at / or at a subpath like /app.
+export const prerender = false;
+import { PAGES, NOT_FOUND } from '../pages-data.js';
+
+const BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, ''); // '' at root, '/app' at a subpath
+
+function applyBase(html) {
+  if (!BASE) return html;
+  return html.replace(/(href|src|action)="\/(?!\/)/g, `$1="${BASE}/`);
+}
+
+let path = new URL(Astro.request.url).pathname;
+if (BASE && path.startsWith(BASE)) path = path.slice(BASE.length) || '/';
+if (!path.endsWith('/')) path += '/';
+
+const hit = PAGES[path];
+const body = hit || NOT_FOUND || PAGES['/'] || '<!doctype html><title>Not found</title>';
+return new Response(applyBase(body), {
+  status: hit ? 200 : 404,
+  headers: { 'content-type': 'text/html; charset=utf-8' },
+});
+---
