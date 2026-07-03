@@ -492,6 +492,13 @@ body.menu-open .menu-toggle span::after { transform: translateY(-6px) rotate(-45
 .consent { display: flex; gap: 0.7rem; align-items: flex-start; font-size: 0.9rem; color: var(--muted); line-height: 1.55; }
 .consent a { color: var(--amber); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .consent a:hover { color: var(--amber-hover); }
+/* Keep the consent text flowing on one line. The footer rule
+   `.footer-col a { display:block }` otherwise stacks Terms / & / Privacy Policy
+   each on its own line inside the SMS opt-in block. Higher-specificity override;
+   the .sms-form wrapper is shared by both the main and footer opt-in blocks. */
+.consent span { display: inline; }
+.sms-form .consent a, .footer-col .consent a { display: inline; padding: 0; }
+.sms-form .consent a::before, .footer-col .consent a::before { content: none; }
 .checkbox {
   appearance: none; -webkit-appearance: none; flex: none;
   width: 20px; height: 20px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--chamber);

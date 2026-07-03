@@ -53,39 +53,41 @@
       s.quadraticCurveTo(x, y, x + r, y);
       return s;
     }
-    const bodyW = 0.62, bodyH = 1.65, bodyDepth = 0.32, corner = 0.12;
+    const bodyW = 0.62, bodyH = 1.65, bodyDepth = 0.32, corner = 0.13;
     const shape = roundedRectShape(bodyW, bodyH, corner);
-    const extrude = new THREE.ExtrudeGeometry(shape, { depth: bodyDepth, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 4, steps: 1, curveSegments: 20 });
+    const extrude = new THREE.ExtrudeGeometry(shape, { depth: bodyDepth, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 8, steps: 1, curveSegments: 40 });
     extrude.center();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: pal.body, roughness: 0.72, metalness: 0.18 });
+    // Soft-touch anodized polymer: matte, with a faint clearcoat sheen so it
+    // catches the studio softboxes the way a real molded shell does.
+    const bodyMat = new THREE.MeshPhysicalMaterial({ color: pal.body, roughness: 0.5, metalness: 0.0, clearcoat: 0.4, clearcoatRoughness: 0.5, envMapIntensity: 1.0 });
     const body = new THREE.Mesh(extrude, bodyMat);
     body.castShadow = true; body.receiveShadow = true;
     g.add(body);
 
-    // ----- Fresnel-ish emissive rim shell so the dark device reads on dark bg -----
-    const rimMat = new THREE.ShaderMaterial({
-      transparent: true, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
-      uniforms: { uColor: { value: new THREE.Color(0xE8A13C) }, uPower: { value: 2.6 }, uIntensity: { value: 0.55 } },
-      vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 wp = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-wp.xyz); gl_Position = projectionMatrix * wp; }',
-      fragmentShader: 'varying vec3 vN; varying vec3 vV; uniform vec3 uColor; uniform float uPower; uniform float uIntensity; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), uPower); gl_FragColor = vec4(uColor * f * uIntensity, f); }'
-    });
-    const rim = new THREE.Mesh(extrude.clone(), rimMat);
-    rim.scale.setScalar(1.06);
+    // The old additive Fresnel halo made the device read as a hologram/CGI.
+    // Removed for photorealism; keep an empty group so downstream code that
+    // nudges userData.rim.position stays valid (no visual effect).
+    const rim = new THREE.Group();
     g.add(rim);
 
-    // ----- full-height dark glass front plane -----
-    const glassGeo = new THREE.PlaneGeometry(bodyW * 0.82, bodyH * 0.9);
-    const glassMat = new THREE.MeshPhysicalMaterial({ color: pal.glass, roughness: 0.08, metalness: 0.0, transmission: 0.0, transparent: true, opacity: 1.0, clearcoat: 1.0, clearcoatRoughness: 0.06, reflectivity: 0.6 });
+    // The beveled body's front face sits at ~bodyDepth/2 + bevelThickness.
+    // Everything on the "screen" must be placed just PROUD of that, or it is
+    // swallowed inside the solid body (which was hiding the glass entirely).
+    const frontZ = bodyDepth / 2 + 0.05;
+    // ----- inset dark glass front (glossy black; mirrors the softboxes as
+    //       crisp streaks, near-black elsewhere). A visible body bezel frames it. -----
+    const glassGeo = new THREE.PlaneGeometry(bodyW * 0.78, bodyH * 0.86);
+    const glassMat = new THREE.MeshPhysicalMaterial({ color: pal.glass, roughness: 0.05, metalness: 0.0, transmission: 0.0, transparent: true, opacity: 1.0, clearcoat: 1.0, clearcoatRoughness: 0.03, reflectivity: 1.0, envMapIntensity: 1.0 });
     const glass = new THREE.Mesh(glassGeo, glassMat);
-    glass.position.set(0, 0, bodyDepth / 2 + 0.035);
+    glass.position.set(0, 0, frontZ + 0.004);
     g.add(glass);
 
     // ----- depth-camera array behind glass, near top -----
     const internals = new THREE.Group();
-    internals.position.set(0, bodyH * 0.30, bodyDepth / 2 + 0.005);
-    const lensMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0f, roughness: 0.25, metalness: 0.85 });
-    const lensRingMat = new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.4, metalness: 0.9 });
-    const glassBlueMat = new THREE.MeshStandardMaterial({ color: 0x22323a, roughness: 0.1, metalness: 0.6, emissive: 0x0a1416, emissiveIntensity: 0.4 });
+    internals.position.set(0, bodyH * 0.30, frontZ + 0.014);
+    const lensMat = new THREE.MeshPhysicalMaterial({ color: 0x050506, roughness: 0.07, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.05, reflectivity: 0.9, envMapIntensity: 1.4 });
+    const lensRingMat = new THREE.MeshStandardMaterial({ color: 0x2b2c31, roughness: 0.26, metalness: 1.0, envMapIntensity: 1.3 });
+    const glassBlueMat = new THREE.MeshPhysicalMaterial({ color: 0x14252d, roughness: 0.05, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.04, emissive: 0x070f13, emissiveIntensity: 0.3, envMapIntensity: 1.3 });
     // top lens
     function makeLens(y, r) {
       const grp = new THREE.Group(); grp.position.y = y;
@@ -119,7 +121,7 @@
     const ledGeo = new THREE.BoxGeometry(bodyW * 0.5, 0.028, 0.02);
     const ledMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xE8A13C, emissiveIntensity: 1.6, roughness: 0.3 });
     const led = new THREE.Mesh(ledGeo, ledMat);
-    led.position.set(0, -bodyH * 0.32, bodyDepth / 2 + 0.04);
+    led.position.set(0, -bodyH * 0.32, frontZ + 0.016);
     g.add(led);
 
     // ----- wordmark plate (BIOVIRTUA): thin light bar to suggest letterspaced text, no gibberish -----
@@ -136,18 +138,18 @@
     const wmMat = new THREE.MeshBasicMaterial({ map: wmTex, transparent: true });
     const wmGeo = new THREE.PlaneGeometry(bodyW * 0.6, bodyW * 0.6 * 64 / 512);
     const wm = new THREE.Mesh(wmGeo, wmMat);
-    wm.position.set(0, -bodyH * 0.11, bodyDepth / 2 + 0.037);
+    wm.position.set(0, -bodyH * 0.11, frontZ + 0.02);
     g.add(wm);
 
-    // ----- circular aluminum base -----
-    const baseMat = new THREE.MeshStandardMaterial({ color: pal.base, roughness: 0.5, metalness: 0.7 });
-    const chamferMat = new THREE.MeshStandardMaterial({ color: pal.chamfer, roughness: 0.25, metalness: 0.9 });
+    // ----- machined, anodized aluminum base -----
+    const baseMat = new THREE.MeshStandardMaterial({ color: pal.base, roughness: 0.34, metalness: 1.0, envMapIntensity: 1.15 });
+    const chamferMat = new THREE.MeshStandardMaterial({ color: pal.chamfer, roughness: 0.13, metalness: 1.0, envMapIntensity: 1.4 });
     const baseGrp = new THREE.Group();
     const baseR = 0.9, baseH = 0.12;
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(baseR, baseR * 0.98, baseH, 48), baseMat);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(baseR, baseR * 0.97, baseH, 96), baseMat);
     base.receiveShadow = true; base.castShadow = true;
     baseGrp.add(base);
-    const chamfer = new THREE.Mesh(new THREE.TorusGeometry(baseR * 0.99, 0.012, 12, 48), chamferMat);
+    const chamfer = new THREE.Mesh(new THREE.TorusGeometry(baseR * 0.99, 0.012, 20, 96), chamferMat);
     chamfer.rotation.x = Math.PI / 2; chamfer.position.y = baseH / 2; baseGrp.add(chamfer);
     baseGrp.position.y = -bodyH / 2 - baseH / 2 + 0.02;
     g.add(baseGrp);
@@ -180,30 +182,137 @@
     return r + ',' + gg + ',' + b;
   }
 
+  // shared rounded-rect shape helper for accessory bodies
+  function roundedRect(w, h, r) {
+    const s = new THREE.Shape();
+    const x = -w / 2, y = -h / 2;
+    s.moveTo(x + r, y);
+    s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+    s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+    s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+    return s;
+  }
+
   /* ------------------------------------------------------------
-     Environment: simple gradient env map via PMREM from a scene.
+     Wall mount: a machined, anodized aluminum bracket with a raised
+     magnetic seat, brass alignment ring, and four countersunk holes.
+     ------------------------------------------------------------ */
+  function buildWallMount() {
+    const g = new THREE.Group();
+    const alu = new THREE.MeshStandardMaterial({ color: 0x9c938a, roughness: 0.3, metalness: 1.0, envMapIntensity: 1.25 });
+    const aluDark = new THREE.MeshStandardMaterial({ color: 0x1e1d1b, roughness: 0.45, metalness: 0.7, envMapIntensity: 1.0 });
+    const brass = new THREE.MeshStandardMaterial({ color: 0xC7B18A, roughness: 0.2, metalness: 1.0, envMapIntensity: 1.4 });
+    const black = new THREE.MeshBasicMaterial({ color: 0x050505 });
+
+    const plateGeo = new THREE.ExtrudeGeometry(roundedRect(1.15, 1.55, 0.15), { depth: 0.1, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 5, curveSegments: 32 });
+    plateGeo.center();
+    const plate = new THREE.Mesh(plateGeo, alu); plate.castShadow = true; plate.receiveShadow = true; g.add(plate);
+
+    // raised magnetic seat boss (front, center)
+    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.5, 0.16, 64), alu);
+    boss.rotation.x = Math.PI / 2; boss.position.z = 0.12; boss.castShadow = true; g.add(boss);
+    const face = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.37, 0.02, 64), aluDark);
+    face.rotation.x = Math.PI / 2; face.position.z = 0.205; g.add(face);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.017, 20, 64), brass);
+    ring.position.z = 0.215; g.add(ring);
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 32), brass);
+    pin.rotation.x = Math.PI / 2; pin.position.z = 0.215; g.add(pin);
+
+    // four countersunk mounting holes
+    [[-0.42, 0.58], [0.42, 0.58], [-0.42, -0.58], [0.42, -0.58]].forEach(function (p) {
+      const cs = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.045, 0.06, 32), aluDark);
+      cs.rotation.x = Math.PI / 2; cs.position.set(p[0], p[1], 0.05); g.add(cs);
+      const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.16, 24), black);
+      hole.rotation.x = Math.PI / 2; hole.position.set(p[0], p[1], 0); g.add(hole);
+    });
+    return g;
+  }
+
+  /* ------------------------------------------------------------
+     Field case: a molded hard-shell with a soft-touch shell, a
+     recessed parting seam, two aluminum latches, a rubber top
+     handle, and corner bumpers.
+     ------------------------------------------------------------ */
+  function buildCase() {
+    const g = new THREE.Group();
+    const shell = new THREE.MeshPhysicalMaterial({ color: 0x1a1715, roughness: 0.46, metalness: 0.0, clearcoat: 0.28, clearcoatRoughness: 0.6, envMapIntensity: 0.9 });
+    const alu = new THREE.MeshStandardMaterial({ color: 0x9c938a, roughness: 0.28, metalness: 1.0, envMapIntensity: 1.25 });
+    const rubber = new THREE.MeshStandardMaterial({ color: 0x0c0b0a, roughness: 0.82, metalness: 0.0, envMapIntensity: 0.7 });
+
+    const body = new THREE.Mesh(new THREE.ExtrudeGeometry(roundedRect(1.5, 1.85, 0.22), { depth: 0.72, bevelEnabled: true, bevelThickness: 0.09, bevelSize: 0.09, bevelSegments: 6, curveSegments: 32 }), shell);
+    body.geometry.center(); body.castShadow = true; body.receiveShadow = true; g.add(body);
+
+    // recessed parting seam around the middle
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.03, 0.88), rubber);
+    seam.position.y = 0.06; g.add(seam);
+
+    // two aluminum latches on the front
+    [-0.42, 0.42].forEach(function (x) {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.22, 0.05), alu);
+      base.position.set(x, 0.02, 0.44); g.add(base);
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 0.04), alu);
+      lip.position.set(x, -0.09, 0.45); g.add(lip);
+    });
+
+    // rubber top handle: rounded bar on two posts
+    const hr = 0.27;
+    const bar = new THREE.Mesh(new THREE.TorusGeometry(hr, 0.05, 20, 44, Math.PI), rubber);
+    bar.position.set(0, 0.96, 0); g.add(bar);
+    [-hr, hr].forEach(function (x) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.14, 24), rubber);
+      post.position.set(x, 0.9, 0); g.add(post);
+    });
+
+    // corner bumpers
+    [[-0.66, 0.8], [0.66, 0.8], [-0.66, -0.8], [0.66, -0.8]].forEach(function (p) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 20), rubber);
+      b.scale.set(1, 1, 0.5); b.position.set(p[0], p[1], 0.34); g.add(b);
+    });
+    return g;
+  }
+
+  /* ------------------------------------------------------------
+     Environment: a real product-photography STUDIO baked to an
+     env map via PMREM. Neutral dark surround + several bright,
+     soft "softbox" panels placed like a studio, so metal and glass
+     pick up long, believable specular highlights. This is the main
+     driver of the photoreal look.
      ------------------------------------------------------------ */
   function makeEnv(renderer) {
     try {
       const pmrem = new THREE.PMREMGenerator(renderer);
       const envScene = new THREE.Scene();
-      // gradient background sphere
-      const geo = new THREE.SphereGeometry(8, 24, 24);
+      // neutral, softly graded surround (charcoal), NOT saturated
+      const geo = new THREE.SphereGeometry(14, 40, 40);
       const mat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
-        uniforms: { top: { value: new THREE.Color(0x40372e) }, bot: { value: new THREE.Color(0x0d0b0a) } },
+        uniforms: {
+          top: { value: new THREE.Color(0x26272a) },
+          mid: { value: new THREE.Color(0x0e0e0f) },
+          bot: { value: new THREE.Color(0x040405) }
+        },
         vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-        fragmentShader: 'varying vec3 vP; uniform vec3 top; uniform vec3 bot; void main(){ float h = normalize(vP).y*0.5+0.5; gl_FragColor = vec4(mix(bot, top, h), 1.0); }'
+        fragmentShader: 'varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot; void main(){ float h = normalize(vP).y*0.5+0.5; vec3 c = h > 0.5 ? mix(mid, top, (h-0.5)*2.0) : mix(bot, mid, h*2.0); gl_FragColor = vec4(c, 1.0); }'
       });
       envScene.add(new THREE.Mesh(geo, mat));
-      // a couple of warm emissive panels for reflections
-      const panelMat = new THREE.MeshBasicMaterial({ color: 0xE8A13C });
-      const p1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 6), panelMat); p1.position.set(4, 1, 2); p1.lookAt(0, 0, 0); envScene.add(p1);
-      const panelMat2 = new THREE.MeshBasicMaterial({ color: 0x7FD8DA });
-      const p2 = new THREE.Mesh(new THREE.PlaneGeometry(2, 4), panelMat2); p2.position.set(-4, 0, -1); p2.lookAt(0, 0, 0); envScene.add(p2);
-      const tex = pmrem.fromScene(envScene, 0.04).texture;
+      // Emissive softbox panels. Colors are pushed above 1.0 so they read
+      // as real (HDR) light sources in the reflections.
+      function panel(w, h, x, y, z, intensity, hex) {
+        const c = new THREE.Color(hex).multiplyScalar(intensity);
+        const m = new THREE.MeshBasicMaterial({ color: c });
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
+        p.position.set(x, y, z); p.lookAt(0, 0, 0); envScene.add(p);
+      }
+      panel(7.5, 10, 6.5, 4.5, 5.5, 6.2, 0xfff2e2);   // key softbox, upper right, warm-white
+      panel(6.5, 9, -6.5, 1.5, 3.5, 2.6, 0xe4edf5);   // fill softbox, left, cool-white
+      panel(11, 2.4, 0, 9, 1, 5.0, 0xffffff);         // top strip, rim highlight along the top edge
+      panel(3.2, 8, -3.5, 0.5, -6.5, 3.4, 0xc4d6e6);  // back-left rim, separates edge from bg
+      panel(3.2, 8, 3.5, 0.5, -6.5, 2.2, 0xd8e2ec);   // back-right rim
+      panel(7, 3, 0, -5.5, 5, 1.1, 0xE8A13C);         // subtle warm bounce from below (brand amber)
+      const rt = pmrem.fromScene(envScene, 0.015);     // low sigma = crisp, glossy reflections
       pmrem.dispose();
-      return tex;
+      return rt.texture;
     } catch (e) { return null; }
   }
 
@@ -214,10 +323,10 @@
   function makeStage(container, opts) {
     opts = opts || {};
     const renderer = new THREE.WebGLRenderer({ antialias: !LOWPOWER, alpha: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOWPOWER ? 1.75 : 2));
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = opts.exposure || 1.05;
+    renderer.toneMappingExposure = opts.exposure || 1.0;
     if (opts.shadows && !LOWPOWER) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
     renderer.setSize(w, h);
@@ -282,15 +391,45 @@
 
   function addLights(scene, opts) {
     opts = opts || {};
-    const key = new THREE.DirectionalLight(0xfff3e2, opts.key || 1.4);
-    key.position.set(3, 5, 4);
-    if (opts.shadows) { key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.camera.near = 1; key.shadow.camera.far = 20; key.shadow.bias = -0.0004; }
+    // Key: warm soft light from upper-right, casts a soft contact shadow.
+    const key = new THREE.DirectionalLight(0xfff4e8, opts.key || 1.15);
+    key.position.set(4, 6, 5);
+    if (opts.shadows) {
+      key.castShadow = true;
+      key.shadow.mapSize.set(2048, 2048);
+      key.shadow.camera.near = 0.5; key.shadow.camera.far = 25;
+      key.shadow.camera.left = -4; key.shadow.camera.right = 4;
+      key.shadow.camera.top = 5; key.shadow.camera.bottom = -5;
+      key.shadow.bias = -0.0003; key.shadow.radius = 8;
+    }
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0x7FD8DA, opts.fill || 0.35);
-    fill.position.set(-4, 1, -2); scene.add(fill);
-    const amb = new THREE.AmbientLight(0x2a241f, opts.amb || 0.6); scene.add(amb);
-    const rim = new THREE.PointLight(0xE8A13C, opts.rim || 0.8, 12); rim.position.set(-2, -1, 3); scene.add(rim);
+    // Fill: neutral cool white from the left, gentle — no saturated tint.
+    const fill = new THREE.DirectionalLight(0xcdd8e6, opts.fill || 0.28);
+    fill.position.set(-5, 1.5, 2.5); scene.add(fill);
+    // Rim: clean white from behind to separate edges from the background.
+    const rim = new THREE.DirectionalLight(0xffffff, opts.rim || 0.55);
+    rim.position.set(-2.5, 3, -5); scene.add(rim);
+    // Ambient: very low; the studio env map supplies the ambient fill.
+    const amb = new THREE.AmbientLight(0xffffff, opts.amb || 0.05); scene.add(amb);
     return { key: key, fill: fill, amb: amb, rim: rim };
+  }
+
+  /* ------------------------------------------------------------
+     Soft contact shadow: an invisible ground plane that only shows
+     the shadow the product casts, so it sits on a surface instead of
+     floating. Transparent everywhere else, so it composites cleanly
+     over the page background.
+     ------------------------------------------------------------ */
+  function addGroundShadow(scene, y, size, opacity) {
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(size || 10, size || 10),
+      new THREE.ShadowMaterial({ opacity: opacity == null ? 0.34 : opacity })
+    );
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.y = y;
+    plane.receiveShadow = true;
+    scene.add(plane);
+    return plane;
   }
 
   /* ============================================================
@@ -309,6 +448,7 @@
     // start slightly above base (docks later)
     dev.group.userData.base.visible = true;
     stage.scene.add(dev.group);
+    addGroundShadow(stage.scene, -0.78, 10, 0.3);
 
     // additive light plane (the beam)
     const beamMat = new THREE.MeshBasicMaterial({ color: 0x7FD8DA, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false });
@@ -499,6 +639,7 @@
     const d = buildDevice({ finish: finishAttr });
     d.group.userData.base.visible = showBase;
     stage.scene.add(d.group);
+    if (showBase) addGroundShadow(stage.scene, -0.92, 8, 0.32);
 
     let rot = 0.4, targetRot = 0.4, rotX = 0, targetRotX = 0, dragging = false, lastX = 0, lastY = 0, vel = 0;
     const allowDrag = !MOBILE && !REDUCED;
@@ -536,52 +677,21 @@
     return { stage: stage, dispose: () => stage.dispose() };
   };
 
-  /* ---------- ACCESSORY: rim-lit slow rotate of a primitive (wall mount / field case) ---------- */
+  /* ---------- ACCESSORY: studio-lit turntable of the real accessory ---------- */
   SCENES.accessory = function (container) {
     const kind = container.getAttribute('data-accessory') || 'wall-mount';
     const stage = makeStage(container, { fov: 40, camZ: 5.2, shadows: true });
-    addLights(stage.scene, { shadows: true, key: 1.4, fill: 0.35, rim: 0.9 });
-    const g = new THREE.Group();
-    const alu = new THREE.MeshStandardMaterial({ color: 0x8c8378, roughness: 0.4, metalness: 0.85 });
-    const aluDark = new THREE.MeshStandardMaterial({ color: 0x24211d, roughness: 0.6, metalness: 0.3 });
-
-    if (kind === 'wall-mount') {
-      // aluminum bracket: back plate + arm + magnetic seat ring
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.12), alu);
-      plate.castShadow = true; g.add(plate);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.28, 0.5), alu);
-      arm.position.set(0, -0.2, 0.31); g.add(arm);
-      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.44, 0.1, 40), alu);
-      seat.rotation.x = Math.PI / 2; seat.position.set(0, -0.2, 0.58); g.add(seat);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.02, 12, 40), new THREE.MeshStandardMaterial({ color: 0xC7B18A, roughness: 0.3, metalness: 0.9 }));
-      ring.position.set(0, -0.2, 0.63); g.add(ring);
-      // mounting holes
-      [[-0.4, 0.55], [0.4, 0.55], [-0.4, -0.55], [0.4, -0.55]].forEach(([x, y]) => {
-        const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.14, 16), aluDark);
-        hole.rotation.x = Math.PI / 2; hole.position.set(x, y, 0); g.add(hole);
-      });
-    } else {
-      // field case: rounded hard-shell box with a seam + latch
-      function rr(w, h, r) { const s = new THREE.Shape(); const x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s; }
-      const shellMat = new THREE.MeshStandardMaterial({ color: 0x1b1815, roughness: 0.55, metalness: 0.25 });
-      const geo = new THREE.ExtrudeGeometry(rr(1.5, 1.9, 0.18), { depth: 0.7, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 3, curveSegments: 16 });
-      geo.center();
-      const shell = new THREE.Mesh(geo, shellMat); shell.castShadow = true; g.add(shell);
-      const seam = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.02, 0.8), new THREE.MeshStandardMaterial({ color: 0x0d0b0a, roughness: 0.8 }));
-      seam.position.y = 0.1; g.add(seam);
-      const latch = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.08), alu);
-      latch.position.set(0, 0.1, 0.4); g.add(latch);
-      const handle = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.035, 10, 30, Math.PI), aluDark);
-      handle.position.set(0, 0.98, 0); g.add(handle);
-    }
+    addLights(stage.scene, { shadows: true });
+    const g = (kind === 'wall-mount') ? buildWallMount() : buildCase();
     g.rotation.y = 0.5;
     stage.scene.add(g);
+    addGroundShadow(stage.scene, kind === 'wall-mount' ? -0.86 : -1.02, 8, 0.34);
     let targetRot = 0.5;
     stage.setUpdate(function (dt, t) {
-      targetRot += 0.25 * dt;
+      targetRot += 0.22 * dt;
       g.rotation.y = targetRot;
-      g.rotation.x = Math.sin(t * 0.4) * 0.08;
-      g.position.y = Math.sin(t * 0.6) * 0.05;
+      g.rotation.x = Math.sin(t * 0.4) * 0.06;
+      g.position.y = Math.sin(t * 0.6) * 0.04;
     });
     stage.start();
     return { stage: stage, dispose: () => stage.dispose() };
@@ -591,33 +701,26 @@
   SCENES.bundle = function (container) {
     const kind = container.getAttribute('data-bundle') || 'home-studio-bundle';
     const finishAttr = container.getAttribute('data-finish') || 'Graphite';
-    const stage = makeStage(container, { fov: 40, camZ: 6, shadows: true });
-    addLights(stage.scene, { shadows: true, key: 1.45, fill: 0.4, rim: 0.9 });
+    const stage = makeStage(container, { fov: 42, camZ: 6.2, shadows: true });
+    addLights(stage.scene, { shadows: true });
     const d = buildDevice({ finish: finishAttr });
-    d.group.scale.setScalar(0.85);
-    d.group.position.x = -1.1;
+    d.group.scale.setScalar(0.8);
+    d.group.position.x = -1.25;
     stage.scene.add(d.group);
 
-    const alu = new THREE.MeshStandardMaterial({ color: 0x8c8378, roughness: 0.4, metalness: 0.85 });
-    const acc = new THREE.Group();
-    acc.position.x = 1.5;
-    if (kind === 'home-studio-bundle') {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.1, 0.1), alu); acc.add(plate);
-      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.08, 36), alu); seat.rotation.x = Math.PI / 2; seat.position.z = 0.32; seat.position.y = -0.1; acc.add(seat);
-    } else {
-      const shellMat = new THREE.MeshStandardMaterial({ color: 0x1b1815, roughness: 0.55, metalness: 0.25 });
-      const shell = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.3, 0.5), shellMat); acc.add(shell);
-      const latch = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.1, 0.06), alu); latch.position.set(0, 0.05, 0.28); acc.add(latch);
-    }
+    const acc = (kind === 'home-studio-bundle') ? buildWallMount() : buildCase();
+    acc.scale.setScalar(0.72);
+    acc.position.set(1.35, kind === 'home-studio-bundle' ? -0.05 : 0.0, 0);
     stage.scene.add(acc);
+    addGroundShadow(stage.scene, -0.76, 12, 0.3);
     let p = 0;
     stage.setUpdate(function (dt, t) {
       d.group.rotation.y = t * 0.3;
       acc.rotation.y = -t * 0.25;
       d.ledMat.emissiveIntensity = 1.1 + Math.sin(t * 1.5) * 0.4;
       // gentle breathing separation
-      d.group.position.x = -1.1 - Math.sin(t * 0.5) * 0.06;
-      acc.position.x = 1.5 + Math.sin(t * 0.5) * 0.06;
+      d.group.position.x = -1.25 - Math.sin(t * 0.5) * 0.05;
+      acc.position.x = 1.35 + Math.sin(t * 0.5) * 0.05;
     });
     stage.start();
     const scope = container.closest('[data-finish-scope]') || document;
@@ -699,6 +802,7 @@
     addLights(stage.scene, { shadows: true, key: 1.3, fill: 0.3, rim: 0.8 });
     const d = buildDevice({ finish: 'Graphite' });
     stage.scene.add(d.group);
+    addGroundShadow(stage.scene, -0.92, 8, 0.3);
     // one amber line that completes (confirmation)
     let lineEl = container.parentElement && container.parentElement.querySelector('.confirm-line-progress');
     stage.setUpdate(function (dt, t) {
@@ -830,5 +934,18 @@
   }
   if (document.readyState === 'complete') schedule();
   else window.addEventListener('load', schedule);
+
+  // Expose builders for offline verification / still rendering. Harmless in prod.
+  window.BV_SCENES = {
+    setThree: function (t) { THREE = t || window.THREE; },
+    buildDevice: buildDevice,
+    buildWallMount: buildWallMount,
+    buildCase: buildCase,
+    makeEnv: makeEnv,
+    makeStage: makeStage,
+    addLights: addLights,
+    addGroundShadow: addGroundShadow,
+    FINISH: FINISH
+  };
 
 })();
