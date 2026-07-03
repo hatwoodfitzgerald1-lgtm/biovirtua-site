@@ -337,7 +337,17 @@
     camera.position.set(0, 0, opts.camZ || 6);
 
     let env = null;
-    if (opts.env !== false) { env = makeEnv(renderer); if (env) scene.environment = env; }
+    if (opts.env !== false) {
+      // IMPORTANT: build the PMREM studio env with a throwaway renderer.
+      // Generating it on the main (shadow-enabled, tone-mapped) renderer yields
+      // a black, unlit result; a separate renderer produces correct IBL.
+      try {
+        const envR = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+        env = makeEnv(envR);
+        envR.dispose();
+      } catch (e) { env = null; }
+      if (env) scene.environment = env;
+    }
 
     let running = false, rafId = null, visible = true, tabHidden = false;
     const clock = new THREE.Clock();
@@ -409,8 +419,10 @@
     // Rim: clean white from behind to separate edges from the background.
     const rim = new THREE.DirectionalLight(0xffffff, opts.rim || 0.55);
     rim.position.set(-2.5, 3, -5); scene.add(rim);
-    // Ambient: very low; the studio env map supplies the ambient fill.
-    const amb = new THREE.AmbientLight(0xffffff, opts.amb || 0.05); scene.add(amb);
+    // Ambient: low; the studio env map supplies most of the fill. Kept as a
+    // safety floor so the product is never a pure-black silhouette if the env
+    // map fails to build on a given browser.
+    const amb = new THREE.AmbientLight(0xffffff, opts.amb || 0.12); scene.add(amb);
     return { key: key, fill: fill, amb: amb, rim: rim };
   }
 
@@ -545,7 +557,10 @@
       idleT += dt;
       // alive on load: slow drift + LED breathing
       const driftAmt = REDUCED ? 0 : 1;
-      dev.group.rotation.y = Math.sin(idleT * 0.25) * 0.10 * driftAmt + prog * 0.2;
+      // rest at a 3/4 view so the lit body side + glass streak read on the dark
+      // hero; straighten into the sweep as the user scrolls.
+      const rest = 0.32 * (1 - clamp(prog / 0.15, 0, 1));
+      dev.group.rotation.y = rest + Math.sin(idleT * 0.25) * 0.08 * driftAmt + prog * 0.22;
       dev.group.userData.body.rotation.y = 0;
       // shift device toward the empty right column when docked framing is idle (prog small)
       const targetX = framingX() * (1 - clamp(prog / 0.2, 0, 1));
